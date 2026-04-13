@@ -75,3 +75,9 @@ The project includes a sleek, glassmorphic UI built with Vite and Tailwind v4.
 │   └── package.json
 └── go.mod              # Go dependencies
 ```
+
+
+### UI Screenshots
+![alt text](image.png)
+![alt text](image-1.png)
+![alt text](image-2.png)
