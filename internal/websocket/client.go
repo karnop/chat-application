@@ -1,0 +1,142 @@
+package websocket
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/gorilla/websocket"
+)
+
+const (
+	writeWait      = 10 * time.Second      // max time allowed to send a message
+	pongWait       = 60 * time.Second      // max time allowed to receive a pong after a ping
+	pingPeriod     = (pongWait * 60) / 100 // send ping every pingPeriod
+	maxMessageSize = 512                   // max size of a message
+)
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024, // buffer size for reading messages
+	WriteBufferSize: 1024, // buffer size for writing messages
+
+	// imp for security, for now we are allowing everything
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+// client is the middleman between the websocket connection and the hub
+type Client struct {
+	hub  *Hub            // pointer to the hub
+	conn *websocket.Conn // the actual websocket connection
+	send chan []byte     // buffered channel of outbound messages
+}
+
+// readPump : Wait for the browser to send data, and pass it to the Hub.
+func (c *Client) readPump() {
+	// defer is used to ensure that the connection is closed and the client is unregistered from the hub when the function returns
+	defer func() {
+		c.hub.unregister <- c
+		c.conn.Close()
+	}()
+
+	// setting the read limit to maxMessageSize
+	c.conn.SetReadLimit(maxMessageSize)
+
+	// setting the read and write deadlines
+	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error {
+		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	// infinite loop to read messages from the websocket connection
+	for {
+		_, raw, err := c.conn.ReadMessage()
+		if err != nil {
+			break
+		}
+
+		var msg Message
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			slog.Error("JSON error", "error", err)
+			continue
+		}
+
+		// sending the message to the hub
+		c.hub.onMessage <- messagePacket{client: c, msg: msg}
+	}
+}
+
+// writePump : Deliver messages from the Hub to browser and Send "Heartbeats" (Pings) to keep the connection alive.
+func (c *Client) writePump() {
+	// creating a ticker to send pings at regular intervals
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+
+	// infinite loop to write messages from the hub to the websocket connection
+	for {
+		select {
+		// case when a message is received from the hub
+		case message, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				// if the channel is closed, close the websocket connection
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			// getting the next writer for the websocket connection
+			w, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
+
+			// writing the messages from the hub to the websocket connection
+			n := len(c.send)
+			for i := 0; i < n; i++ {
+				w.Write([]byte{'\n'})
+				w.Write(<-c.send)
+			}
+			if err := w.Close(); err != nil {
+				return
+			}
+
+		// case when the ticker sends a ping
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// ServeWs handles the websocket requests from the peer
+func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+	// upgrading the http connection to a websocket connection
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		slog.Error("upgrade error", "error", err)
+		return
+	}
+
+	// creating a new client
+	client := &Client{
+		hub:  hub,
+		conn: conn,
+		send: make(chan []byte, 256),
+	}
+
+	// registering the client with the hub
+	client.hub.register <- client
+
+	// starting the read and write pumps
+	go client.writePump()
+	go client.readPump()
+}

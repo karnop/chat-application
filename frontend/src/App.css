@@ -1,0 +1,60 @@
+/* frontend/src/App.css */
+.chat-app {
+  display: flex;
+  height: 100vh;
+  background: #f0f2f5;
+  font-family: 'Inter', sans-serif;
+}
+
+.sidebar {
+  width: 250px;
+  background: #202c33;
+  color: white;
+  padding: 20px;
+}
+
+.status-indicator.connected {
+  color: #00ff00;
+}
+
+.status-indicator.disconnected {
+  color: #ff3b30;
+}
+
+.main-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.message-list {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message-bubble {
+  background: white;
+  padding: 10px 15px;
+  border-radius: 18px;
+  max-width: 60%;
+  align-self: flex-start;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.input-bar {
+  padding: 20px;
+  background: #f0f2f5;
+  display: flex;
+  gap: 10px;
+}
+
+.input-bar input {
+  flex: 1;
+  padding: 12px;
+  border-radius: 20px;
+  border: 1px solid #ddd;
+}
