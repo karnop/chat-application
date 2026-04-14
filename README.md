@@ -78,6 +78,6 @@ The project includes a sleek, glassmorphic UI built with Vite and Tailwind v4.
 
 
 ### UI Screenshots
-![alt text](image.png)
-![alt text](image-1.png)
-![alt text](image-2.png)
+![alt text](assets/images/image.png)
+![alt text](assets/images/image-1.png)
+![alt text](assets/images/image-2.png)

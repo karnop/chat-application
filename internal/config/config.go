@@ -1,13 +1,26 @@
 package config
 
-import "os"
+import (
+	"log"
+	"log/slog"
+	"os"
+
+	"github.com/joho/godotenv"
+)
 
 type Config struct {
 	Port        string
 	FrontendUrl string
+	DatabaseUrl string
 }
 
 func LoadConfig() *Config {
+	// loading env variables
+	err := godotenv.Load()
+	if err != nil {
+		slog.Warn("No .env file found")
+	}
+
 	// port to run web server
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -20,8 +33,16 @@ func LoadConfig() *Config {
 		frontendUrl = "http://localhost:5173,http://127.0.0.1:5173"
 	}
 
+	// database url
+	databaseUrl := os.Getenv("DATABASE_URL")
+	if databaseUrl == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+
 	return &Config{
 		Port:        port,
 		FrontendUrl: frontendUrl,
+		DatabaseUrl: databaseUrl,
 	}
+
 }

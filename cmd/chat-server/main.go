@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"manavmsanger/chatapp/internal/config"
+	"manavmsanger/chatapp/internal/database"
 	"manavmsanger/chatapp/internal/websocket"
 	"net/http"
 	"os"
@@ -19,6 +20,19 @@ func main() {
 
 	// loading config
 	cfg := config.LoadConfig()
+
+	// init db
+	pool, err := database.InitDB(cfg.DatabaseUrl)
+	if err != nil {
+		slog.Error("Failed to initialize database", "error", err)
+	}
+	defer pool.Close()
+
+	// running migrations
+	if err := database.RunMigrations(pool); err != nil {
+		slog.Error("Failed to run migrations", "error", err)
+		os.Exit(1)
+	}
 
 	// init router and hub
 	hub := websocket.NewHub()
