@@ -1,7 +1,8 @@
 package main
 
 import (
-	"manavmsanger/chatapp/internal/config"
+	"manavmsanger/chatapp/internal/api"
+	"manavmsanger/chatapp/internal/app"
 	"manavmsanger/chatapp/internal/websocket"
 	"net/http"
 	"strings"
@@ -12,13 +13,13 @@ import (
 )
 
 // routes handles all api routing for the project
-func routes(hub *websocket.Hub, cfg *config.Config) http.Handler {
+func routes(app *app.Application) http.Handler {
 	// using chi for better routing.
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: strings.Split(cfg.FrontendUrl, ","),
+		AllowedOrigins: strings.Split(app.Config.FrontendUrl, ","),
 		AllowedMethods: []string{
 			"GET",
 			"POST",
@@ -46,8 +47,12 @@ func routes(hub *websocket.Hub, cfg *config.Config) http.Handler {
 
 	// websocket endpoint
 	r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
-		websocket.ServeWs(hub, w, r)
+		websocket.ServeWs(app.Hub, w, r)
 	})
+
+	authHandler := api.NewAuthHandler(app.AuthService)
+	r.Post("/api/signup", authHandler.Signup)
+	r.Post("/api/login", authHandler.Login)
 
 	return r
 }

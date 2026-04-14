@@ -12,6 +12,7 @@ type Config struct {
 	Port        string
 	FrontendUrl string
 	DatabaseUrl string
+	JWTSecret   string
 }
 
 func LoadConfig() *Config {
@@ -31,6 +32,12 @@ func LoadConfig() *Config {
 	frontendUrl := os.Getenv("FRONTEND_URL")
 	if frontendUrl == "" {
 		frontendUrl = "http://localhost:5173,http://127.0.0.1:5173"
+	}
+
+	// JWT secret
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is not set")
 	}
 
 	// database url

@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"log/slog"
+	"manavmsanger/chatapp/internal/app"
 	"manavmsanger/chatapp/internal/config"
 	"manavmsanger/chatapp/internal/database"
+	repository "manavmsanger/chatapp/internal/repository/postgres"
+	"manavmsanger/chatapp/internal/service"
 	"manavmsanger/chatapp/internal/websocket"
 	"net/http"
 	"os"
@@ -34,10 +37,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// init router and hub
+	// init hub
 	hub := websocket.NewHub()
 	go hub.Run()
-	mux := routes(hub, cfg)
+
+	// router init
+	userRepo := repository.NewUserRepository(pool)
+	authService := service.NewAuthService(userRepo, cfg) // cfg for jwt creds
+
+	chatApp := app.New(cfg, hub, authService)
+
+	// setting up routes
+	mux := routes(chatApp)
 
 	// defining the server
 	server := &http.Server{
