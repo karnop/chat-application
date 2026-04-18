@@ -1,83 +1,120 @@
 # GoChat - High-Performance WebSocket Chat
 
-A production-grade, multi-room chat application built with **Go** (Backend) and **React + Tailwind CSS** (Frontend). Designed with scalability in mind, it features a concurrent Hub & Client architecture, structured logging, and graceful shutdown capabilities.
+A production-grade, multi-room chat application built with **Go** (Backend) and **React + Tailwind CSS** (Frontend). Designed with scalability in mind, it features a concurrent Hub & Client architecture, structured logging, and a robust Direct Messaging system.
 
 ---
 
-## 🚀 Usage
+## 🚀 Key Features
 
-First, ensure the Go backend is running:
-```bash
-# From the root of the project
-go run cmd/chat-server/*.go
+- **Real-time Communication**: Low-latency messaging via WebSockets.
+- **Direct Messaging (DM)**: Secure 1-to-1 private conversations between users.
+- **Room Management**: Support for public and private channels with invitation-only access for private rooms.
+- **JWT Authentication**: Secure user registration and session management.
+- **Glassmorphic UI**: A modern, responsive interface with backdrop-blurs and glowing accents.
+- **Clean Architecture**: Backend strictly follows the Hexagonal (Ports & Adapters) pattern for maintainability.
+- **Persistence**: Full message history and user data stored in PostgreSQL.
+
+---
+
+## 🏗 Backend Documentation
+
+### Architecture
+The backend is structured using **Clean Architecture**. This decouples business logic from external dependencies like databases or web frameworks.
+- **Domain**: Business entities and repository interfaces (`internal/domain`).
+- **Service**: Orchestrates business rules (`internal/service`).
+- **Repository**: Data persistence implementations (`internal/repository`).
+- **API**: HTTP handlers and WebSocket logic (`internal/api`, `internal/websocket`).
+
+### API Endpoint Reference
+
+| Endpoint | Method | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `/api/signup` | POST | No | Register a new user account. |
+| `/api/login` | POST | No | Authenticate and receive a JWT. |
+| `/api/rooms` | GET | Yes | List all public rooms and joined private rooms. |
+| `/api/rooms` | POST | Yes | Create a new channel (Public or Private). |
+| `/api/rooms/invite` | POST | Yes | Invite a user to a private room. |
+| `/api/users` | GET | Yes | Discover other users to start a DM. |
+| `/api/dm/history/{id}` | GET | Yes | Fetch message history for a 1-to-1 conversation. |
+| `/ws` | GET | No | WebSocket upgrade endpoint (token passed as query param). |
+
+### WebSocket Protocol
+Messages are exchanged as JSON envelopes with the following structure:
+```json
+{
+  "type": "chat | dm | join",
+  "room": "RoomName or RecipientID",
+  "user": "SenderUsername",
+  "content": "Message content",
+  "timestamp": 123456789
+}
 ```
 
-The server will start on `http://127.0.0.1:8080`.
+---
 
-### Option 1: Terminal (via Websocat)
-You can interact directly with the WebSocket server using `websocat`, which is great for debugging or building bot integrations.
+## 🎨 Frontend Architecture
 
-1. Connect to the WebSocket endpoint:
-   ```bash
-   websocat ws://127.0.0.1:8080/ws
-   ```
-2. **Join a Room**: The server expects a JSON envelope. To join a room and receive the message history, paste the following and hit `Enter`:
-   ```json
-   {"type": "join", "room": "General", "user": "TerminalGhost", "content": ""}
-   ```
-3. **Send a Message**: To broadcast a message to everyone in that room:
-   ```json
-   {"type": "chat", "room": "General", "user": "TerminalGhost", "content": "Hello from the command line!"}
-   ```
+The frontend is built with **Vite, React, and Tailwind CSS v4**. It was recently refactored from a monolithic `App.jsx` into a modular component-based system.
 
-### Option 2: Web Interface (React)
-The project includes a sleek, glassmorphic UI built with Vite and Tailwind v4.
+### Core Components (`src/components/`)
+- **`sidebar/`**: Manages Channel lists and the searchable Private Messages interface.
+- **`chat/`**: Handles the Message List, Chat Header, and Input logic.
+- **`auth/`**: Isolated screens for Login and Signup.
+- **`common/`**: Reusable UI elements like `Toast` notifications and `AmbientBackground`.
 
-1. Open a new terminal and navigate to the frontend:
-   ```bash
-   cd frontend
-   npm install
-   ```
-2. Start the development server:
-   ```bash
-   npm run dev
-   ```
-3. Open `http://127.0.0.1:5173` in multiple browser tabs to simulate different users. Type in a username, join a secure channel, and chat in real-time!
+### State Management
+- **`useWebSocket`**: A custom hook that abstracts the socket connection, manages automatic reconnection, and handles incoming message buffering.
 
 ---
 
-## 🏗 Architecture & Features
+## 🛠 Setup & Development
 
-### Backend (Go)
-- **Concurrent Hub Strategy**: Instead of broadcasting to all connected users, the `Hub` maintains separate `map[*Client]bool` buckets for individual rooms, ensuring O(1) targeted message delivery.
-- **In-Memory History**: The server retains the last 50 messages per room, dispatching them sequentially to newly joined clients for a seamless UX.
-- **Deduplication**: Every message is stamped with a Unix Milli timestamp (`time.Now().UnixMilli()`) at the server level, guaranteeing unique message keys on the frontend.
-- **Graceful Shutdown**: Utilizes `context.WithTimeout` and `os.Signal` to catch interrupt signals (`SIGTERM`, `SIGINT`), flushing active connections and shutting down cleanly.
+### Deployment Checklist (Environment Variables)
+Ensure the following variables are set:
+- `DATABASE_URL`: Postgres connection string.
+- `JWT_SECRET`: Secret key for token signing.
+- `PORT`: Server port (default: 8080).
+- `FRONTEND_URL`: CORS allowed origin (e.g., `http://localhost:5173`).
 
-### Frontend (React + Vite)
-- **Custom WebSocket Hook**: Connection lifecycle is abstracted into `useWebSocket.js`, preventing memory leaks and managing component re-renders.
-- **Dynamic State**: Supports on-the-fly room creation mapped directly to the Go server's dynamic map allocation.
-- **Modern UI**: Styled strictly with functional Tailwind CSS utilities, featuring backdrop-blurs, glowing accents based on hashed usernames, and a custom scrollbar.
+### Database Migrations
+We use `goose` for schema management.
+```bash
+# Apply migrations
+goose -dir internal/database/migrations postgres "$DATABASE_URL" up
+```
+
+### Running Locally
+```bash
+# Backend
+go run cmd/chat-server/*.go
+
+# Frontend
+cd frontend
+npm run dev
+```
+
+---
 
 ## 📁 Directory Structure
 ```text
 .
-├── cmd/
-│   └── chat-server/    # Application entrypoint (main.go, api.go)
+├── cmd/chat-server/    # Application entrypoint
 ├── internal/
-│   ├── config/         # Environment configurations & CORS setup
-│   └── websocket/      # Core real-time logic (hub.go, client.go, message.go)
-├── frontend/           # React SPA
+│   ├── api/            # HTTP Handlers
+│   ├── domain/         # Core Models & Interfaces
+│   ├── service/        # Business Logic
+│   ├── repository/     # Postgres Implementations
+│   └── websocket/      # Real-time Hub & Client logic
+├── frontend/
 │   ├── src/
-│   │   ├── hooks/      # useWebSocket abstraction
-│   │   ├── App.jsx     # Main UI
-│   │   └── index.css   # Tailwind entry setup
-│   └── package.json
-└── go.mod              # Go dependencies
+│   │   ├── components/ # Modular UI components
+│   │   └── hooks/      # Custom React hooks
+│   └── index.css       # Tailwind v4 configuration
+└── README.md
 ```
 
+### UI
 
-### UI Screenshots
-![alt text](assets/images/image.png)
 ![alt text](assets/images/image-1.png)
 ![alt text](assets/images/image-2.png)
+![alt text](assets/images/image.png)
