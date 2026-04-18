@@ -44,10 +44,11 @@ func main() {
 	msgRepo := repository.NewMessageRepository(pool)
 	roomRepo := repository.NewRoomRepository(pool)
 	roomService := service.NewRoomService(roomRepo, userRepo)
-	hub := websocket.NewHub(msgRepo, roomService)
+	dmRepo := repository.NewDMRepository(pool)
+	hub := websocket.NewHub(msgRepo, dmRepo, roomService)
 	go hub.Run()
 
-	chatApp := app.New(cfg, hub, authService, msgRepo, roomService)
+	chatApp := app.New(cfg, hub, authService, msgRepo, userRepo, dmRepo, roomService)
 
 	// setting up routes
 	mux := routes(chatApp)

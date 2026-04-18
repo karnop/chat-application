@@ -34,3 +34,21 @@ func (r *UserRepository) GetByUsername(username string) (*domain.User, error) {
 	err := row.Scan(&user.ID, &user.Username, &user.PasswordHash, &user.CreatedAt)
 	return &user, err
 }
+
+func (r *UserRepository) GetAll(excludeID string) ([]domain.User, error) {
+	query := `SELECT id, username FROM users WHERE id != $1 ORDER BY username ASC`
+	rows, err := r.pool.Query(context.Background(), query, excludeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var users []domain.User
+	for rows.Next() {
+		var u domain.User
+		if err := rows.Scan(&u.ID, &u.Username); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}

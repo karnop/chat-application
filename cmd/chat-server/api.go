@@ -55,14 +55,20 @@ func routes(app *app.Application) http.Handler {
 	r.Post("/api/signup", authHandler.Signup)
 	r.Post("/api/login", authHandler.Login)
 
-	// room endpoints
+	// endpoints
 	roomHandler := api.NewRoomHandler(app.RoomService)
+	dmHandler := api.NewDMHandler(app.DMRepo, app.UserRepo)
+
 	r.Group(func(r chi.Router) {
 		r.Use(api.JWTMiddleware(app.AuthService))
 
 		r.Get("/api/rooms", roomHandler.ListRooms)
 		r.Post("/api/rooms", roomHandler.CreateRoom)
 		r.Post("/api/rooms/invite", roomHandler.InviteMember)
+
+		r.Get("/api/users", dmHandler.ListUsers)
+		r.Get("/api/dm/history/{userId}", dmHandler.GetHistory)
 	})
+
 	return r
 }

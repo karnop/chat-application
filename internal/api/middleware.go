@@ -39,6 +39,13 @@ func JWTMiddleware(authService domain.AuthService) func(http.Handler) http.Handl
 
 // GetUserIDFromContext is a helper to get the ID back out in the handlers
 func GetUserIDFromContext(ctx context.Context) string {
-	id, _ := ctx.Value(UserIdKey).(string)
+	val := ctx.Value(UserIdKey)
+	if val == nil {
+		return ""
+	}
+	id, ok := val.(string)
+	if !ok {
+		return ""
+	}
 	return id
 }

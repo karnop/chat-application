@@ -10,7 +10,9 @@ import (
 // hub manages the websocket connections and the broadcast of messages to all clients
 type Hub struct {
 	rooms       map[string]map[*Client]bool // rooms
+	userClients map[string]map[*Client]bool
 	msgRepo     domain.MessageRepository
+	dmRepo      domain.DMRepository
 	roomService domain.RoomService
 	register    chan *Client // register request from the clients
 	unregister  chan *Client // unregister request from the clients
@@ -24,10 +26,12 @@ type messagePacket struct {
 	msg    *domain.Message
 }
 
-func NewHub(msgRepo domain.MessageRepository, roomService domain.RoomService) *Hub {
+func NewHub(msgRepo domain.MessageRepository, dmRepo domain.DMRepository, roomService domain.RoomService) *Hub {
 	return &Hub{
 		rooms:       make(map[string]map[*Client]bool),
+		userClients: make(map[string]map[*Client]bool),
 		msgRepo:     msgRepo,
+		dmRepo:      dmRepo,
 		roomService: roomService,
 		register:    make(chan *Client),
 		unregister:  make(chan *Client),
@@ -41,14 +45,24 @@ func (h *Hub) Run() {
 	for {
 		select {
 		// case when a client wants to register
-		case _ = <-h.register:
-			slog.Info("Connection activated")
+		case client := <-h.register:
+			// registering user connection
+			if h.userClients[client.UserId] == nil {
+				h.userClients[client.UserId] = make(map[*Client]bool)
+			}
+			h.userClients[client.UserId][client] = true
+			slog.Info("Connection activated", "user_id", client.UserId)
 
 		// case when a client wants to unregister
 		case client := <-h.unregister:
-			for name, clients := range h.rooms {
+			if clients, ok := h.userClients[client.UserId]; ok {
 				delete(clients, client)
-				slog.Info("User left", "room", name)
+				if len(clients) == 0 {
+					delete(h.userClients, client.UserId)
+				}
+			}
+			for _, clients := range h.rooms {
+				delete(clients, client)
 			}
 			close(client.send)
 
@@ -83,6 +97,49 @@ func (h *Hub) handleMessage(client *Client, msg domain.Message) {
 
 	case "chat":
 		h.broadcastToRoom(msg)
+
+	case "dm":
+		h.handleDirectMessage(client, msg)
+	}
+
+}
+
+func (h *Hub) handleDirectMessage(client *Client, msg domain.Message) {
+	// Force sender's username into the message object
+	msg.User = client.Username
+
+	// Prepare DM entity for DB
+	dm := &domain.DMMessage{
+		SenderID:    client.UserId,
+		RecipientID: msg.Room,
+		Content:     msg.Content,
+		Timestamp:   time.Now().UnixMilli(),
+	}
+	// Persist to DB
+	go h.dmRepo.Save(dm)
+
+	// Route to Recipient AND Sender (multiple tabs support)
+	senderMsg, _ := json.Marshal(msg)
+
+	recipientMsg := msg
+	recipientMsg.Room = client.UserId      // Room = Sender's ID for the recipient
+	recipientMsg.User = client.Username // Sender's Name
+	rawRecipientMsg, _ := json.Marshal(recipientMsg)
+
+	// Deliver to Recipient
+	if clients, ok := h.userClients[dm.RecipientID]; ok {
+		for c := range clients {
+			c.send <- rawRecipientMsg
+		}
+	}
+
+	// Deliver to Sender (other tabs/devices)
+	if clients, ok := h.userClients[dm.SenderID]; ok {
+		for c := range clients {
+			if c != client {
+				c.send <- senderMsg
+			}
+		}
 	}
 }
 
