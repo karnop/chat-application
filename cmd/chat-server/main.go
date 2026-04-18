@@ -37,15 +37,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// init hub
-	hub := websocket.NewHub()
-	go hub.Run()
-
-	// router init
+	// init services
 	userRepo := repository.NewUserRepository(pool)
 	authService := service.NewAuthService(userRepo, cfg) // cfg for jwt creds
+	msgRepo := repository.NewMessageRepository(pool)
+	hub := websocket.NewHub(msgRepo)
+	go hub.Run()
 
-	chatApp := app.New(cfg, hub, authService)
+	chatApp := app.New(cfg, hub, authService, msgRepo)
 
 	// setting up routes
 	mux := routes(chatApp)

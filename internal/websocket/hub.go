@@ -3,15 +3,16 @@ package websocket
 import (
 	"encoding/json"
 	"log/slog"
+	"manavmsanger/chatapp/internal/domain"
 	"time"
 )
 
 // hub manages the websocket connections and the broadcast of messages to all clients
 type Hub struct {
 	rooms      map[string]map[*Client]bool // rooms
-	history    map[string][]Message        // last 50 messages for new users
-	register   chan *Client                // register request from the clients
-	unregister chan *Client                // unregister request from the clients
+	msgRepo    domain.MessageRepository
+	register   chan *Client // register request from the clients
+	unregister chan *Client // unregister request from the clients
 
 	// special channel that recieves a message and the client who sent it
 	onMessage chan messagePacket
@@ -19,13 +20,13 @@ type Hub struct {
 
 type messagePacket struct {
 	client *Client
-	msg    Message
+	msg    *domain.Message
 }
 
-func NewHub() *Hub {
+func NewHub(msgRepo domain.MessageRepository) *Hub {
 	return &Hub{
 		rooms:      make(map[string]map[*Client]bool),
-		history:    make(map[string][]Message),
+		msgRepo:    msgRepo,
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		onMessage:  make(chan messagePacket),
@@ -51,13 +52,13 @@ func (h *Hub) Run() {
 
 		// case when a message is received from a client
 		case packet := <-h.onMessage:
-			h.handleMessage(packet.client, packet.msg)
+			h.handleMessage(packet.client, *packet.msg)
 		}
 	}
 }
 
 // handleMessage handles the incoming messages from clients
-func (h *Hub) handleMessage(client *Client, msg Message) {
+func (h *Hub) handleMessage(client *Client, msg domain.Message) {
 	switch msg.Type {
 	case "join":
 		if h.rooms[msg.Room] == nil {
@@ -67,11 +68,10 @@ func (h *Hub) handleMessage(client *Client, msg Message) {
 		slog.Info("User joined", "room", msg.Room)
 
 		// sending history back to this client
-		if hist, ok := h.history[msg.Room]; ok {
-			for _, m := range hist {
-				raw, _ := json.Marshal(m)
-				client.send <- raw
-			}
+		history, _ := h.msgRepo.GetRecentMessagesByRoom(msg.Room, 50)
+		for _, m := range history {
+			raw, _ := json.Marshal(m)
+			client.send <- raw
 		}
 
 	case "chat":
@@ -80,14 +80,12 @@ func (h *Hub) handleMessage(client *Client, msg Message) {
 }
 
 // broadcastToRoom broadcasts a message to all clients in a room
-func (h *Hub) broadcastToRoom(msg Message) {
+func (h *Hub) broadcastToRoom(msg domain.Message) {
 	// setting timestamp
 	msg.Timestamp = time.Now().UnixMilli()
 
-	h.history[msg.Room] = append(h.history[msg.Room], msg)
-	if len(h.history[msg.Room]) > 50 {
-		h.history[msg.Room] = h.history[msg.Room][1:]
-	}
+	// saving to db
+	go h.msgRepo.Save(&msg)
 
 	raw, _ := json.Marshal(msg)
 	for client := range h.rooms[msg.Room] {

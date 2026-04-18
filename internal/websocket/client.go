@@ -63,7 +63,7 @@ func (c *Client) readPump() {
 			break
 		}
 
-		var msg Message
+		var msg domain.Message
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			slog.Error("JSON error", "error", err)
 			continue
@@ -79,7 +79,7 @@ func (c *Client) readPump() {
 		msg.User = c.Username
 
 		// sending the message to the hub
-		c.hub.onMessage <- messagePacket{client: c, msg: msg}
+		c.hub.onMessage <- messagePacket{client: c, msg: &msg}
 	}
 }
 

@@ -11,12 +11,14 @@ type Application struct {
 	Config      *config.Config
 	Hub         *websocket.Hub
 	AuthService domain.AuthService
+	MsgRepo     domain.MessageRepository
 }
 
-func New(cfg *config.Config, hub *websocket.Hub, auth domain.AuthService) *Application {
+func New(cfg *config.Config, hub *websocket.Hub, auth domain.AuthService, msgRepo domain.MessageRepository) *Application {
 	return &Application{
 		Config:      cfg,
 		Hub:         hub,
 		AuthService: auth,
+		MsgRepo:     msgRepo,
 	}
 }
