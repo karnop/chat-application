@@ -50,9 +50,19 @@ func routes(app *app.Application) http.Handler {
 		websocket.ServeWs(app.Hub, app.AuthService, w, r)
 	})
 
+	// auth endpoints
 	authHandler := api.NewAuthHandler(app.AuthService)
 	r.Post("/api/signup", authHandler.Signup)
 	r.Post("/api/login", authHandler.Login)
 
+	// room endpoints
+	roomHandler := api.NewRoomHandler(app.RoomService)
+	r.Group(func(r chi.Router) {
+		r.Use(api.JWTMiddleware(app.AuthService))
+
+		r.Get("/api/rooms", roomHandler.ListRooms)
+		r.Post("/api/rooms", roomHandler.CreateRoom)
+		r.Post("/api/rooms/invite", roomHandler.InviteMember)
+	})
 	return r
 }

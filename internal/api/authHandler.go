@@ -50,7 +50,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// calling the service
-	token, err := h.authService.Login(req.Username, req.Password)
+	token, userId, err := h.authService.Login(req.Username, req.Password)
 	if err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
@@ -58,5 +58,5 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// returning the response
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	json.NewEncoder(w).Encode(map[string]string{"token": token, "user_id": userId})
 }

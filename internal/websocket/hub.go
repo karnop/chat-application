@@ -9,10 +9,11 @@ import (
 
 // hub manages the websocket connections and the broadcast of messages to all clients
 type Hub struct {
-	rooms      map[string]map[*Client]bool // rooms
-	msgRepo    domain.MessageRepository
-	register   chan *Client // register request from the clients
-	unregister chan *Client // unregister request from the clients
+	rooms       map[string]map[*Client]bool // rooms
+	msgRepo     domain.MessageRepository
+	roomService domain.RoomService
+	register    chan *Client // register request from the clients
+	unregister  chan *Client // unregister request from the clients
 
 	// special channel that recieves a message and the client who sent it
 	onMessage chan messagePacket
@@ -23,13 +24,14 @@ type messagePacket struct {
 	msg    *domain.Message
 }
 
-func NewHub(msgRepo domain.MessageRepository) *Hub {
+func NewHub(msgRepo domain.MessageRepository, roomService domain.RoomService) *Hub {
 	return &Hub{
-		rooms:      make(map[string]map[*Client]bool),
-		msgRepo:    msgRepo,
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		onMessage:  make(chan messagePacket),
+		rooms:       make(map[string]map[*Client]bool),
+		msgRepo:     msgRepo,
+		roomService: roomService,
+		register:    make(chan *Client),
+		unregister:  make(chan *Client),
+		onMessage:   make(chan messagePacket),
 	}
 }
 
@@ -61,6 +63,11 @@ func (h *Hub) Run() {
 func (h *Hub) handleMessage(client *Client, msg domain.Message) {
 	switch msg.Type {
 	case "join":
+		canJoin, _ := h.roomService.CanJoinRoom(msg.Room, client.UserId)
+		if !canJoin {
+			slog.Warn("Unauthorized join attempt", "user", client.Username, "room", msg.Room)
+			return
+		}
 		if h.rooms[msg.Room] == nil {
 			h.rooms[msg.Room] = make(map[*Client]bool)
 		}

@@ -24,22 +24,22 @@ func (s *AuthService) Signup(username, password string) error {
 	return s.repo.Create(username, hash)
 }
 
-func (s *AuthService) Login(username, password string) (string, error) {
+func (s *AuthService) Login(username, password string) (string, string, error) {
 	user, err := s.repo.GetByUsername(username)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	if !auth.CheckPassword(password, user.PasswordHash) {
-		return "", errors.New("invalid password")
+		return "", "", errors.New("invalid password")
 	}
 
 	token, err := auth.GenerateToken(s.cfg.JWTSecret, user.ID, user.Username)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return token, nil
+	return token, user.ID, nil
 }
 
 func (s *AuthService) VerifyToken(tokenString string) (string, string, error) {

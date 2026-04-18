@@ -28,6 +28,7 @@ func main() {
 	pool, err := database.InitDB(cfg.DatabaseUrl)
 	if err != nil {
 		slog.Error("Failed to initialize database", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
@@ -41,10 +42,12 @@ func main() {
 	userRepo := repository.NewUserRepository(pool)
 	authService := service.NewAuthService(userRepo, cfg) // cfg for jwt creds
 	msgRepo := repository.NewMessageRepository(pool)
-	hub := websocket.NewHub(msgRepo)
+	roomRepo := repository.NewRoomRepository(pool)
+	roomService := service.NewRoomService(roomRepo, userRepo)
+	hub := websocket.NewHub(msgRepo, roomService)
 	go hub.Run()
 
-	chatApp := app.New(cfg, hub, authService, msgRepo)
+	chatApp := app.New(cfg, hub, authService, msgRepo, roomService)
 
 	// setting up routes
 	mux := routes(chatApp)
