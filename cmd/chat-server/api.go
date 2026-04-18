@@ -47,7 +47,7 @@ func routes(app *app.Application) http.Handler {
 
 	// websocket endpoint
 	r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
-		websocket.ServeWs(app.Hub, w, r)
+		websocket.ServeWs(app.Hub, app.AuthService, w, r)
 	})
 
 	authHandler := api.NewAuthHandler(app.AuthService)

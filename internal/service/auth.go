@@ -30,14 +30,18 @@ func (s *AuthService) Login(username, password string) (string, error) {
 		return "", err
 	}
 
-	if !auth.CheckPassword(user.PasswordHash, password) {
+	if !auth.CheckPassword(password, user.PasswordHash) {
 		return "", errors.New("invalid password")
 	}
 
-	token, err := auth.GenerateToken(s.cfg.JWTSecret, user.ID)
+	token, err := auth.GenerateToken(s.cfg.JWTSecret, user.ID, user.Username)
 	if err != nil {
 		return "", err
 	}
 
 	return token, nil
+}
+
+func (s *AuthService) VerifyToken(tokenString string) (string, string, error) {
+	return auth.ParseToken(tokenString, s.cfg.JWTSecret)
 }

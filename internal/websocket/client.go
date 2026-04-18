@@ -3,6 +3,7 @@ package websocket
 import (
 	"encoding/json"
 	"log/slog"
+	"manavmsanger/chatapp/internal/domain"
 	"net/http"
 	"time"
 
@@ -31,6 +32,10 @@ type Client struct {
 	hub  *Hub            // pointer to the hub
 	conn *websocket.Conn // the actual websocket connection
 	send chan []byte     // buffered channel of outbound messages
+
+	UserId   string
+	Username string
+	IsGuest  bool
 }
 
 // readPump : Wait for the browser to send data, and pass it to the Hub.
@@ -63,6 +68,15 @@ func (c *Client) readPump() {
 			slog.Error("JSON error", "error", err)
 			continue
 		}
+
+		// guest user vs authenticated
+		if c.IsGuest && msg.Type == "chat" {
+			slog.Warn("Guest tried to send a message", "user", c.Username)
+			continue
+		}
+
+		// setting the username of the message
+		msg.User = c.Username
 
 		// sending the message to the hub
 		c.hub.onMessage <- messagePacket{client: c, msg: msg}
@@ -111,7 +125,28 @@ func (c *Client) writePump() {
 }
 
 // ServeWs handles the websocket requests from the peer
-func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+func ServeWs(hub *Hub, authService domain.AuthService, w http.ResponseWriter, r *http.Request) {
+	// extracting token from URL
+	token := r.URL.Query().Get("token")
+	var userId, username string
+	var isGuest bool
+	if token == "" {
+		// guest user
+		isGuest = true
+		userId = "guest-id"
+		username = "guest"
+
+	} else {
+		// authenticated user
+		var err error
+		userId, username, err = authService.VerifyToken(token)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		isGuest = false
+	}
+
 	// upgrading the http connection to a websocket connection
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -121,9 +156,12 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 
 	// creating a new client
 	client := &Client{
-		hub:  hub,
-		conn: conn,
-		send: make(chan []byte, 256),
+		hub:      hub,
+		conn:     conn,
+		send:     make(chan []byte, 256),
+		UserId:   userId,
+		Username: username,
+		IsGuest:  isGuest,
 	}
 
 	// registering the client with the hub
