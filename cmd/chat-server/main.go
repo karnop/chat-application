@@ -32,6 +32,14 @@ func main() {
 	}
 	defer pool.Close()
 
+	// init redis
+	rdb, err := database.InitRedis(cfg.RedisUrl)
+	if err != nil {
+		slog.Error("Failed to initialize redis", "error", err)
+		os.Exit(1)
+	}
+	defer rdb.Close()
+
 	// running migrations
 	if err := database.RunMigrations(pool); err != nil {
 		slog.Error("Failed to run migrations", "error", err)
@@ -44,7 +52,7 @@ func main() {
 	msgRepo := repository.NewMessageRepository(pool)
 	roomRepo := repository.NewRoomRepository(pool)
 	roomService := service.NewRoomService(roomRepo, userRepo)
-	hub := websocket.NewHub(msgRepo, roomService)
+	hub := websocket.NewHub(msgRepo, roomService, rdb)
 	go hub.Run()
 
 	chatApp := app.New(cfg, hub, authService, msgRepo, userRepo, roomService)

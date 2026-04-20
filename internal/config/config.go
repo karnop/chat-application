@@ -13,6 +13,7 @@ type Config struct {
 	FrontendUrl string
 	DatabaseUrl string
 	JWTSecret   string
+	RedisUrl    string
 }
 
 func LoadConfig() *Config {
@@ -46,11 +47,18 @@ func LoadConfig() *Config {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
+	// redis url
+	redisUrl := os.Getenv("REDIS_URL")
+	if redisUrl == "" {
+		redisUrl = "localhost:6379"
+	}
+
 	return &Config{
 		Port:        port,
 		FrontendUrl: frontendUrl,
 		DatabaseUrl: databaseUrl,
 		JWTSecret:   jwtSecret,
+		RedisUrl:    redisUrl,
 	}
 
 }

@@ -1,10 +1,13 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"manavmsanger/chatapp/internal/domain"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // hub manages the websocket connections and the broadcast of messages to all clients
@@ -13,6 +16,7 @@ type Hub struct {
 	userClients map[string]map[*Client]bool
 	msgRepo     domain.MessageRepository
 	roomService domain.RoomService
+	rdb         *redis.Client
 	register    chan *Client // register request from the clients
 	unregister  chan *Client // unregister request from the clients
 
@@ -25,12 +29,13 @@ type messagePacket struct {
 	msg    *domain.Message
 }
 
-func NewHub(msgRepo domain.MessageRepository, roomService domain.RoomService) *Hub {
+func NewHub(msgRepo domain.MessageRepository, roomService domain.RoomService, rdb *redis.Client) *Hub {
 	return &Hub{
 		rooms:       make(map[string]map[*Client]bool),
 		userClients: make(map[string]map[*Client]bool),
 		msgRepo:     msgRepo,
 		roomService: roomService,
+		rdb:         rdb,
 		register:    make(chan *Client),
 		unregister:  make(chan *Client),
 		onMessage:   make(chan messagePacket),
@@ -40,6 +45,9 @@ func NewHub(msgRepo domain.MessageRepository, roomService domain.RoomService) *H
 // Run is the main loop of the hub
 func (h *Hub) Run() {
 	slog.Info("Hub is running...")
+
+	go h.subscribeToRedis()
+
 	for {
 		select {
 		// case when a client wants to register
@@ -142,54 +150,69 @@ func (h *Hub) handleDirectMessage(client *Client, msg *domain.Message) {
 	// Persist to unified DB
 	go h.msgRepo.Save(msg)
 
-	// Route to Recipient AND Sender (multiple tabs support)
-	senderMsg, _ := json.Marshal(msg)
-
-	recipientMsg := *msg
-	recipientMsg.RoomName = client.UserId // For the recipient, the "Room" is the Sender's ID
-	rawRecipientMsg, _ := json.Marshal(recipientMsg)
-
-	// Deliver to Recipient
-	if clients, ok := h.userClients[msg.RecipientID]; ok {
-		for c := range clients {
-			c.send <- rawRecipientMsg
-		}
-	}
-
-	// Deliver to Sender (other tabs/devices)
-	if clients, ok := h.userClients[msg.SenderID]; ok {
-		for c := range clients {
-			c.send <- senderMsg
-		}
-	}
-}
-
-// broadcastToRoom broadcasts a message to all clients in a room
-func (h *Hub) broadcastToRoom(msg *domain.Message, saveToDb bool) {
-	msg.Timestamp = time.Now().UnixMilli()
-
-	// saving to db
-	if saveToDb {
-		go h.msgRepo.Save(msg)
-	}
-
 	raw, _ := json.Marshal(msg)
-	for client := range h.rooms[msg.RoomName] {
-		select {
-		case client.send <- raw:
-		default:
-			close(client.send)
-			delete(h.rooms[msg.RoomName], client)
-		}
-	}
+	h.rdb.Publish(context.Background(), "chat_broadcast", raw)
 }
 
 func (h *Hub) routeDMEvent(msg *domain.Message) {
 	raw, _ := json.Marshal(msg)
-	// Route to the recipient (the 'RoomName' field holds the recipient ID for DM events)
-	if clients, ok := h.userClients[msg.RoomName]; ok {
-		for c := range clients {
-			c.send <- raw
+	h.rdb.Publish(context.Background(), "chat_broadcast", raw)
+}
+
+func (h *Hub) subscribeToRedis() {
+	pubsub := h.rdb.Subscribe(context.Background(), "chat_broadcast")
+	defer pubsub.Close()
+
+	ch := pubsub.Channel()
+	for msg := range ch {
+		var chatMsg domain.Message
+		if err := json.Unmarshal([]byte(msg.Payload), &chatMsg); err != nil {
+			slog.Error("Failed to unmarshal redis message", "error", err)
+			continue
+		}
+
+		// broadcasting locally to clients connected to this instance
+		h.localBroadcast(&chatMsg)
+	}
+}
+
+// localBroadcast sends a message only to clients connected to this specific server instance
+func (h *Hub) localBroadcast(msg *domain.Message) {
+	raw, _ := json.Marshal(msg)
+	// Standard Room Broadcast
+	if msg.RoomName != "" && msg.RecipientID == "" {
+		for client := range h.rooms[msg.RoomName] {
+			client.send <- raw
+		}
+		return
+	}
+	// Direct Message Routing
+	if msg.RecipientID != "" {
+		// Deliver to Recipient if they are on this instance
+		if clients, ok := h.userClients[msg.RecipientID]; ok {
+			for c := range clients {
+				// swap the context for the recipient so it appears in their 'Sender' view
+				recipientMsg := *msg
+				recipientMsg.RoomName = msg.SenderID
+				rRaw, _ := json.Marshal(recipientMsg)
+				c.send <- rRaw
+			}
+		}
+		// Deliver to Sender (other tabs/devices) if they are on this instance
+		if clients, ok := h.userClients[msg.SenderID]; ok {
+			for c := range clients {
+				c.send <- raw
+			}
 		}
 	}
+}
+
+// broadcastToRoom now publishes to Redis instead of only local broadcast
+func (h *Hub) broadcastToRoom(msg *domain.Message, saveToDb bool) {
+	msg.Timestamp = time.Now().UnixMilli()
+	if saveToDb {
+		go h.msgRepo.Save(msg)
+	}
+	raw, _ := json.Marshal(msg)
+	h.rdb.Publish(context.Background(), "chat_broadcast", raw)
 }

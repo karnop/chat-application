@@ -43,7 +43,7 @@ const App = () => {
             if (typingTimeouts.current[timeoutKey]) {
                 clearTimeout(typingTimeouts.current[timeoutKey]);
             }
-            
+
             typingTimeouts.current[timeoutKey] = setTimeout(() => {
                 setTypingUsers(prev => {
                     const roomUsers = (prev[room] || []).filter(u => u !== user);
@@ -71,7 +71,7 @@ const App = () => {
                     }
                     return { ...m, reactions: newReactions };
                 });
-                
+
                 setMessagesFunc(applyReaction);
                 setDMHistory(applyReaction);
             } catch (err) {
@@ -92,7 +92,11 @@ const App = () => {
     }, [username]);
 
     // WebSocket hook
-    const { messages, setMessages, status, sendMessage } = useWebSocket('ws://127.0.0.1:8080/ws', token, handleIncomingMessage);
+    const queryParams = new URLSearchParams(window.location.search);
+    const backendPort = queryParams.get('port') || '8080';
+    const wsUrl = `ws://127.0.0.1:${backendPort}/ws`;
+    // WebSocket hook
+    const { messages, setMessages, status, sendMessage } = useWebSocket(wsUrl, token, handleIncomingMessage);
 
     // --- ROOM STATE ---
     const [rooms, setRooms] = useState([]);
@@ -348,7 +352,7 @@ const App = () => {
     }
 
     const isChatMsg = (m) => !m.type || m.type === 'chat' || m.type === 'dm';
-    
+
     const displayMessages = activeTab === 'dm'
         ? [...dmHistory, ...messages.filter(m => isChatMsg(m) && m.room === activeDMUser?.id)]
         : messages.filter(m => isChatMsg(m) && m.room === currentRoom);
