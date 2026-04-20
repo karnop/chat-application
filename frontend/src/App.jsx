@@ -24,8 +24,75 @@ const App = () => {
     const [toast, setToast] = useState({ message: '', type: '', visible: false });
     const chatInputRef = useRef(null);
 
+    const handleIncomingMessage = useCallback((data, setMessagesFunc) => {
+        if (data.type === 'error') {
+            showToast(data.content, "error");
+            return;
+        }
+
+        if (data.type === 'typing') {
+            const { room, user } = data;
+            if (user === username) return;
+
+            setTypingUsers(prev => ({
+                ...prev,
+                [room]: Array.from(new Set([...(prev[room] || []), user]))
+            }));
+
+            const timeoutKey = `${room}-${user}`;
+            if (typingTimeouts.current[timeoutKey]) {
+                clearTimeout(typingTimeouts.current[timeoutKey]);
+            }
+            
+            typingTimeouts.current[timeoutKey] = setTimeout(() => {
+                setTypingUsers(prev => {
+                    const roomUsers = (prev[room] || []).filter(u => u !== user);
+                    return { ...prev, [room]: roomUsers };
+                });
+            }, 3000);
+            return;
+        }
+
+        if (data.type === 'reaction' || data.type === 'remove_reaction') {
+            try {
+                const reactionData = JSON.parse(data.content);
+                const msgId = reactionData.message_id;
+
+                const applyReaction = (prevMsgs) => prevMsgs.map(m => {
+                    if (m.id !== msgId) return m;
+
+                    let newReactions = m.reactions || [];
+                    if (data.type === 'reaction') {
+                        if (!newReactions.some(r => r.user_id === reactionData.user_id && r.emoji === reactionData.emoji)) {
+                            newReactions = [...newReactions, { ...reactionData, user: data.user || reactionData.username }];
+                        }
+                    } else {
+                        newReactions = newReactions.filter(r => !(r.user_id === reactionData.user_id && r.emoji === reactionData.emoji));
+                    }
+                    return { ...m, reactions: newReactions };
+                });
+                
+                setMessagesFunc(applyReaction);
+                setDMHistory(applyReaction);
+            } catch (err) {
+                console.error("Failed to parse reaction:", err);
+            }
+            return;
+        }
+
+        // Clear loading spinner instantly if history for this room starts arriving
+        if (loadingRoomRef.current === data.room) {
+            setIsRoomLoading(false);
+            loadingRoomRef.current = null;
+            setTimeout(scrollToBottom, 50);
+        }
+
+        // Standard chat message
+        setMessagesFunc(prev => [...prev, data]);
+    }, [username]);
+
     // WebSocket hook
-    const { messages, status, sendMessage } = useWebSocket('ws://127.0.0.1:8080/ws', token);
+    const { messages, setMessages, status, sendMessage } = useWebSocket('ws://127.0.0.1:8080/ws', token, handleIncomingMessage);
 
     // --- ROOM STATE ---
     const [rooms, setRooms] = useState([]);
@@ -54,6 +121,9 @@ const App = () => {
         setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
     };
 
+    const [typingUsers, setTypingUsers] = useState({}); // Stores { room: [users...] }
+    const typingTimeouts = useRef({}); // To clear indicators after a few seconds
+
     const fetchRooms = useCallback(async () => {
         try {
             const headers = { 'Content-Type': 'application/json' };
@@ -71,7 +141,6 @@ const App = () => {
             setIsLoadingRooms(false);
         }
     }, [token]);
-
 
     const handleCreateRoom = async (e) => {
         e.preventDefault();
@@ -132,6 +201,8 @@ const App = () => {
         }
     };
 
+    const loadingRoomRef = useRef(null);
+
     const joinRoom = (roomName) => {
         if (roomName === currentRoom && activeTab === 'rooms') return;
 
@@ -140,13 +211,14 @@ const App = () => {
         setCurrentRoom(roomName);
         setShowInviteField(false);
         setIsRoomLoading(true);
+        loadingRoomRef.current = roomName;
         sendMessage("join", roomName, username, "");
 
         setTimeout(() => {
             setIsRoomLoading(false);
             chatInputRef.current?.focus();
             scrollToBottom();
-        }, 600);
+        }, 2000); // 2-second safe fallback for empty rooms
     };
 
     const handleAuth = async (e) => {
@@ -190,14 +262,6 @@ const App = () => {
 
         if (activeTab === 'dm' && activeDMUser) {
             sendMessage("dm", activeDMUser.id, username, input.trim());
-            const newMsg = {
-                user: username,
-                room: activeDMUser.id,
-                content: input.trim(),
-                timestamp: Date.now(),
-                type: 'dm'
-            };
-            setDMHistory(prev => [...prev, newMsg]);
         } else {
             sendMessage("chat", currentRoom, username, input.trim());
         }
@@ -224,6 +288,7 @@ const App = () => {
         setActiveTab('dm');
         setActiveDMUser(user);
         setCurrentRoom('');
+        setIsRoomLoading(true);
 
         try {
             const response = await fetch(`http://127.0.0.1:8080/api/dm/history/${user.id}`, {
@@ -232,9 +297,14 @@ const App = () => {
             if (response.ok) {
                 const data = await response.json();
                 setDMHistory(data || []);
+            } else {
+                showToast("Failed to load chat history", "error");
             }
         } catch (err) {
-            showToast("Failed to load chat history", "error");
+            showToast("Network error loading chat history", "error");
+        } finally {
+            setIsRoomLoading(false);
+            setTimeout(scrollToBottom, 100);
         }
     }, [token]);
 
@@ -251,9 +321,14 @@ const App = () => {
         if (isJoined) {
             fetchRooms();
             fetchPotentialPartners();
+        }
+    }, [isJoined, fetchRooms, fetchPotentialPartners]);
+
+    useEffect(() => {
+        if (isJoined) {
             scrollToBottom();
         }
-    }, [messages, currentRoom, isJoined, fetchRooms, fetchPotentialPartners]);
+    }, [messages, dmHistory, currentRoom, activeDMUser, isJoined]);
 
     if (!isJoined) {
         return (
@@ -272,12 +347,14 @@ const App = () => {
         );
     }
 
+    const isChatMsg = (m) => !m.type || m.type === 'chat' || m.type === 'dm';
+    
     const displayMessages = activeTab === 'dm'
-        ? [...dmHistory, ...messages.filter(m => m.type === 'dm' && m.room === activeDMUser?.id)]
-        : messages.filter(m => m.room === currentRoom);
+        ? [...dmHistory, ...messages.filter(m => isChatMsg(m) && m.room === activeDMUser?.id)]
+        : messages.filter(m => isChatMsg(m) && m.room === currentRoom);
 
     const uniqueMessages = displayMessages.filter((msg, index, self) =>
-        index === self.findIndex((t) => t.timestamp === msg.timestamp)
+        index === self.findIndex((t) => (t.id && msg.id && t.id === msg.id) || (!t.id && t.timestamp === msg.timestamp && t.user === msg.user))
     );
 
     return (
@@ -327,6 +404,8 @@ const App = () => {
                     handleInvite={handleInvite}
                     inviteName={inviteName}
                     setInviteName={setInviteName}
+                    sendMessage={sendMessage}
+                    typingUsers={typingUsers}
                 />
             </div>
         </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 
 const MessageInput = ({
     input,
@@ -8,15 +8,33 @@ const MessageInput = ({
     activeTab,
     activeDMUser,
     currentRoom,
-    chatInputRef
+    chatInputRef,
+    username,
+    sendMessage
 }) => {
+    const lastTypingTime = useRef(0);
+
+    const handleInputChange = (e) => {
+        setInput(e.target.value);
+
+        // ✍️ Send typing indicator every 2 seconds while typing
+        const now = Date.now();
+        if (now - lastTypingTime.current > 2000) {
+            lastTypingTime.current = now;
+            const target = activeTab === 'dm' ? activeDMUser?.id : currentRoom;
+            if (target) {
+                sendMessage("typing", target, username, "");
+            }
+        }
+    };
+
     return (
         <div className="p-6 border-t border-white/5 bg-white/[0.02]">
             <form onSubmit={handleSend} className="flex gap-3 items-center bg-black/60 p-2 rounded-[1.5rem] border border-white/10 focus-within:border-indigo-500/50 transition-colors">
                 <input
                     ref={chatInputRef}
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={handleInputChange}
                     disabled={isGuest}
                     placeholder={isGuest ? "Login to post..." : (activeTab === 'dm' ? `Message @${activeDMUser?.username}...` : `Message # ${currentRoom}...`)}
                     className="flex-1 bg-transparent border-none px-4 py-3 outline-none text-white text-sm disabled:opacity-30"

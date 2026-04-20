@@ -50,6 +50,7 @@ func LoadConfig() *Config {
 		Port:        port,
 		FrontendUrl: frontendUrl,
 		DatabaseUrl: databaseUrl,
+		JWTSecret:   jwtSecret,
 	}
 
 }

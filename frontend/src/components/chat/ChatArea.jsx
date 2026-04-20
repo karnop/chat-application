@@ -23,8 +23,14 @@ const ChatArea = ({
     chatInputRef,
     handleInvite,
     inviteName,
-    setInviteName
+    setInviteName,
+    sendMessage,
+    typingUsers,
+    userId
 }) => {
+    const activeRoomId = activeTab === 'dm' ? activeDMUser?.id : currentRoom;
+    const currentTyping = typingUsers[activeRoomId] || [];
+
     return (
         <div className="flex-1 flex flex-col relative">
             <ChatHeader
@@ -53,16 +59,27 @@ const ChatArea = ({
                 </div>
             )}
 
+
             <MessageList
                 messages={messages}
                 username={username}
+                userId={userId}
                 isRoomLoading={isRoomLoading}
                 activeTab={activeTab}
                 activeDMUser={activeDMUser}
                 currentRoom={currentRoom}
                 formatTime={formatTime}
                 messagesEndRef={messagesEndRef}
+                sendMessage={sendMessage}
             />
+
+            {currentTyping.length > 0 && (
+                <div className="px-8 pb-1 absolute bottom-24 left-0">
+                    <p className="text-[10px] text-indigo-400/70 animate-pulse font-medium italic bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm border border-indigo-500/20">
+                        {currentTyping.join(', ')} {currentTyping.length === 1 ? 'is' : 'are'} typing...
+                    </p>
+                </div>
+            )}
 
             <MessageInput
                 input={input}
@@ -73,6 +90,8 @@ const ChatArea = ({
                 activeDMUser={activeDMUser}
                 currentRoom={currentRoom}
                 chatInputRef={chatInputRef}
+                username={username}
+                sendMessage={sendMessage}
             />
         </div>
     );

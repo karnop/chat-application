@@ -1,7 +1,7 @@
 /* frontend/src/hooks/useWebSocket.js */
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export const useWebSocket = (url, token) => {
+export const useWebSocket = (url, token, onMessage) => {
     const [messages, setMessages] = useState([]);
     const [status, setStatus] = useState('Disconnected');
     const socketRef = useRef(null);
@@ -18,11 +18,15 @@ export const useWebSocket = (url, token) => {
 
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            setMessages((prev) => [...prev, data]);
+            if (onMessage) {
+                onMessage(data, setMessages);
+            } else {
+                setMessages((prev) => [...prev, data]);
+            }
         };
 
         return () => socket.close();
-    }, [url, token]); // Re-connect if the token changes (e.g. Login/Logout)
+    }, [url, token, onMessage]); // Re-connect if the token changes (e.g. Login/Logout)
 
     const sendMessage = useCallback((type, room, user, content) => {
         if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -30,5 +34,5 @@ export const useWebSocket = (url, token) => {
         }
     }, []);
 
-    return { messages, status, sendMessage };
+    return { messages, setMessages, status, sendMessage };
 };

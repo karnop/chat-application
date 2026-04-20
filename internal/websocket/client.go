@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -36,6 +37,7 @@ type Client struct {
 	UserId   string
 	Username string
 	IsGuest  bool
+	limiter  *rate.Limiter // rate limiting to prevent spam
 }
 
 // readPump : Wait for the browser to send data, and pass it to the Hub.
@@ -63,6 +65,21 @@ func (c *Client) readPump() {
 			break
 		}
 
+		// rate limiting
+		if !c.limiter.Allow() {
+			slog.Warn("Rate limit exceeded", "user", c.Username)
+			errMsg := domain.Message{
+				Type:       "error",
+				Content:    "Slow down! You're sending messages too fast.",
+				SenderName: "System",
+				Timestamp:  time.Now().UnixMilli(),
+			}
+			if raw, err := json.Marshal(errMsg); err == nil {
+				c.send <- raw
+			}
+			continue
+		}
+
 		var msg domain.Message
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			slog.Error("JSON error", "error", err)
@@ -76,7 +93,7 @@ func (c *Client) readPump() {
 		}
 
 		// setting the username of the message
-		msg.User = c.Username
+		msg.SenderName = c.Username
 
 		// sending the message to the hub
 		c.hub.onMessage <- messagePacket{client: c, msg: &msg}
@@ -162,6 +179,7 @@ func ServeWs(hub *Hub, authService domain.AuthService, w http.ResponseWriter, r 
 		UserId:   userId,
 		Username: username,
 		IsGuest:  isGuest,
+		limiter:  rate.NewLimiter(rate.Limit(3), 5),
 	}
 
 	// registering the client with the hub

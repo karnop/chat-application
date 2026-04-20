@@ -9,12 +9,12 @@ import (
 )
 
 type DMHandler struct {
-	dmRepo   domain.DMRepository
+	msgRepo  domain.MessageRepository
 	userRepo domain.UserRepository
 }
 
-func NewDMHandler(dmRepo domain.DMRepository, userRepo domain.UserRepository) *DMHandler {
-	return &DMHandler{dmRepo: dmRepo, userRepo: userRepo}
+func NewDMHandler(msgRepo domain.MessageRepository, userRepo domain.UserRepository) *DMHandler {
+	return &DMHandler{msgRepo: msgRepo, userRepo: userRepo}
 }
 
 // ListUsers returns all users you can start a DM with
@@ -29,6 +29,6 @@ func (h *DMHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	currentUserId := GetUserIDFromContext(r.Context())
 	partnerId := chi.URLParam(r, "userId")
 
-	history, _ := h.dmRepo.GetConversation(currentUserId, partnerId, 100)
+	history, _ := h.msgRepo.GetDMHistory(currentUserId, partnerId, 100)
 	json.NewEncoder(w).Encode(history)
 }

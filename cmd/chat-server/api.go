@@ -57,7 +57,7 @@ func routes(app *app.Application) http.Handler {
 
 	// endpoints
 	roomHandler := api.NewRoomHandler(app.RoomService)
-	dmHandler := api.NewDMHandler(app.DMRepo, app.UserRepo)
+	dmHandler := api.NewDMHandler(app.MsgRepo, app.UserRepo)
 
 	r.Group(func(r chi.Router) {
 		r.Use(api.JWTMiddleware(app.AuthService))
